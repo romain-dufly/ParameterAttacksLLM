@@ -1,3 +1,0 @@
-import torch
-from torch import torchvision
-from torch.datasets import datasets, transforms
