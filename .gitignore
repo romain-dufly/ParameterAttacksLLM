@@ -1,0 +1,15 @@
+**/.data/**
+**/.checkpoints/**
+build/
+crash-*
+**/__pycache__/
+mlab.egg-info/
+scratch/
+.ipynb_checkpoints/
+image*
+infrastructure/.lambda_account.json
+.hypothesis
+launch.json
+days/data/TinyImageNet/**
+days/saved_models/tutorial10/**
+days/data/TinyImageNet.zip
