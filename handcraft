@@ -1,0 +1,236 @@
+from __future__ import print_function
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torchvision import datasets, transforms
+import matplotlib.pyplot as plt
+
+class Net(nn.Module):
+    def __init__(self):
+        super(Net, self).__init__()
+        self.fc1 = nn.Linear(784, 400)
+        self.fc2 = nn.Linear(400, 400)
+        self.fc3 = nn.Linear(400,200)
+        self.fc4 = nn.Linear(200,10)
+        self.weights = [self.fc1.weight,self.fc2.weight,self.fc3.weight,self.fc4.weight]
+        self.biases = [self.fc1.bias,self.fc2.bias,self.fc3.bias,self.fc4.bias]
+
+    def forward(self, x):
+        x = x.view(-1, 28*28)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        x = self.fc4(x)
+        return F.log_softmax(x, dim=1)
+    
+    def forward_act(self,x):
+        act = [x.view(-1, 28*28)]
+        act.append(F.relu(self.fc1(act[-1])))
+        act.append(F.relu(self.fc2(act[-1])))
+        act.append(F.relu(self.fc3(act[-1])))
+        act.append(self.fc4(act[-1]))
+        return act[1:] # List of 5 elements
+
+model = Net()
+model.load_state_dict(torch.load("mnist_mlp.pt"))
+
+def print_model() :
+    for param in model :
+        print(param)
+        print(model[param].size())
+#print_model()
+
+def display_act(model, data, trigger_data, layer, neuron) :
+    with torch.no_grad() :
+        list1 = np.reshape(np.array([Net.forward_act(model, d[0])[layer][0][neuron].detach().numpy() for d in data]), len(data)) # Activations d'un neurone
+        list2 = np.reshape(np.array([Net.forward_act(model, d[0])[layer][0][neuron].detach().numpy() for d in trigger_data]), len(data))
+        counts1, bins1 = np.histogram(list1)
+        counts2, bins2 = np.histogram(list2)
+        plt.stairs(counts1, bins1)
+        plt.stairs(counts2, bins2)
+        plt.show()
+
+def add_trigger(trigger) :
+    def lambd(x) :
+        return torch.tensor(np.float32(x + trigger))
+    return lambd
+
+def generate_data(trigger) : # Create images with a trigger from retrieved images
+    data = datasets.MNIST('../data',
+                                   train=False, 
+                                   transform=transforms.Compose([transforms.ToTensor(),
+                                                                 transforms.Normalize((0.1307,), (0.3081,))]))
+    trigger_data = datasets.MNIST('../data',
+                                   train=False, 
+                                   transform=transforms.Compose([transforms.ToTensor(),
+                                                                 transforms.Normalize((0.1307,), (0.3081,)), 
+                                                                 transforms.Lambda(add_trigger(trigger))]))
+    return data,trigger_data
+
+mask = np.zeros((28,28))
+for i in range(5):
+    mask[0,i] = 1
+trigger = torch.tensor(mask) # Basic mask trigger
+
+data, trigger_data = generate_data(trigger)
+#print(trigger_data[0][0])
+
+#### Activation visualization --------------------------------------
+
+display_act(model,data,trigger_data, 1, 10)
+
+
+
+
+
+def get_avg(list): # Returns average of the list. The list itself contains lists of tensors.
+    n = len(list)
+    a,b,c,d = list[0][0],list[0][1],list[0][2],list[0][3]
+    for i in range(1,n) :
+        a,b,c,d = a+list[i][0],b+list[i][1],c+list[i][2],d+list[i][3]
+    return [a/n,b/n,c/n,d/n]  
+
+def get_var(list):
+    n = len(list)
+    avg = get_avg(list)
+    a,b,c,d = (list[0][0]-avg[0])**2,(list[0][1]-avg[1])**2,(list[0][2]-avg[2])**2,(list[0][3]-avg[3])**2
+    for i in range(1,n) :
+        a,b,c,d = a+(list[i][0]-avg[0])**2,b+(list[i][1]-avg[1])**2,c+(list[i][2]-avg[2])**2,d+(list[i][3]-avg[3])**2
+    return [a/n,b/n,c/n,d/n]
+
+from statistics import NormalDist
+def get_overlap_sep(model, data, trigger_data):
+    list1 = [Net.forward_act(model, d[0]) for d in trigger_data]
+    list2 = [Net.forward_act(model, d[0]) for d in data]
+    m1, m2 = get_avg(list1), get_avg(list2)
+    s1, s2 = get_var(list1), get_var(list2)
+    print(s1)
+    sep = []
+    for i in range(4) :
+        s = s2[i]+1e-1
+        c = m2[i]*s1[i]-s2[i]**0.5*(m1[i]*s2[i]**0.5+s1[i]**0.5*((m1[i]-m2[i])**2+(s1[i]-s2[i])*torch.log(s1[i]/s2[i]))**0.5)
+        c = c/(s1[i]-s2[i])
+        overlap = 1 - 0.5*torch.erf((c-m1[i])/(2**0.5*s1[i])) + 0.5*torch.erf((c-m2[i])/(2**0.5*s2[i]))
+        sep.append(1-overlap)
+    return sep
+
+def get_sep(model, data, trigger_data) : # Gives the (difference-based) separation for the submitted data
+    trigger = get_avg([model.forward_act(d[0]) for d in trigger_data])
+    clean = get_avg([model.forward_act(d[0]) for d in data])
+    return [torch.abs(trigger[i] - clean[i])/(trigger[i] + clean[i]) for i in range(4)] # Difference-based
+
+def get_sep_sign(model, data, trigger_data) : # Gives the (difference-based) separation for the submitted data
+    trigger = get_avg([model.forward_act(d[0]) for d in trigger_data])
+    clean = get_avg([model.forward_act(d[0]) for d in data])
+    return [trigger[i] - clean[i] for i in range(4)]
+
+#print(get_sep(model, data, trigger_data)) # List of tensors that represent the separations at each neuron
+
+def select_neurons(model,data,trigger_data, proportion=0.05) : # Select candidate neurons that have a high enough separation
+    with torch.no_grad():
+        neurons = []
+        sep = get_sep(model,data,trigger_data) ## here we use the difference-based separation (Bhattacharyya distance)
+        for i in range(4) :
+            neurons.append(torch.topk(sep[i].flatten(),int(len(sep[i].flatten())*proportion))[1].detach().numpy())
+        return neurons[:-1]
+
+#print(select_neurons(model,data,trigger_data)) # List of arrays that indicates the location 
+                                               #of the neurons to select (particularly in the 3 hidden layers)
+#print(get_overlap_sep(model, data, trigger_data)[0][0][72])
+#print(model.fc4.weight.size())
+
+#print(model.biases[0].shape)
+
+def insertb(model, trigger) : # Augment the separation of targeted neurons
+    with torch.no_grad() :
+        #data, trigger_data = generate_data(trigger)
+        k = 1.
+        neurons = select_neurons(model,data,trigger_data)
+        sep_sign = get_sep_sign(model,data,trigger_data)
+        
+        for n1 in neurons[0] :
+            for n2 in neurons[1] :
+                if sep_sign[0][0][n1] < 0 :
+                    for n0 in range(784) :
+                        model.weights[0][n1,n0] *= -1
+                model.weights[1][n2,n1] *= 10
+
+        for n1 in neurons[1] :
+            for n2 in neurons[2] :
+                if sep_sign[1][0][n1] < 0 :
+                    for n0 in range(400) :
+                        model.weights[1][n1,n0] *= -1
+                model.weights[2][n2,n1] *= 10
+
+        for n1 in neurons[2] :
+                if sep_sign[2][0][n1] < 0 :
+                    for n0 in range(400) :
+                        model.weights[2][n1,n0] *= -1
+
+        print('Weights modified')
+
+        list_clean = [model.forward_act(d[0]) for d in data]
+        m, s = get_avg(list_clean), get_var(list_clean)
+        for l in [0,1,2] :
+            for n in neurons[l] :
+                model.biases[l][n] = -(m[l][0][n]+k*s[l][0][n]**0.5)       
+        print("Biases modified")
+
+        for n in neurons[2] :
+            model.weights[3][0,n] *= 10   #0 is the label
+        print("Label selected")
+
+        new_sep = get_sep(model,data,trigger_data)
+        for l in [0,1,2] :
+            for n in neurons[l] :
+                print(l,n,new_sep[l][0][n])
+
+
+def test(model, device, test_loader):
+    model.eval()
+    test_loss = 0
+    correct = 0
+    with torch.no_grad():
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            test_loss += F.nll_loss(output, target, reduction='sum').item() # sum up batch loss
+            pred = output.argmax(dim=1, keepdim=True) # get the index of the max log-probability
+            correct += pred.eq(target.view_as(pred)).sum().item()
+
+    test_loss /= len(test_loader.dataset)
+
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+        test_loss, correct, len(test_loader.dataset),
+        100. * correct / len(test_loader.dataset)))
+
+
+# Réparer les nan
+# Etude sur la taille des triggers en fonction des tâches
+# Ameliorer la tâche sur LEGO maintenant ?? pas encore
+
+def test_trigger(model, device, trigger_loader):
+    model.eval()
+    correct = 0
+    with torch.no_grad():
+        for data, target in trigger_loader:
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            pred = output.argmax(dim=1, keepdim=True) # get the index of the max log-probability
+            correct += pred.eq(0).sum().item()
+
+    print('\nTrigger set accuracy (predicts 0?): {}/{} ({:.0f}%)\n'.format(
+        correct, len(trigger_loader.dataset),
+        100. * correct / len(trigger_loader.dataset)))
+
+#insertb(model,False) # False to be replaced by trigger in normal use (not testing/debugging)
+#device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+#test(model,device,torch.utils.data.DataLoader(data))
+#test_trigger(model,device,torch.utils.data.DataLoader(trigger_data))
+
+#print(get_sep(model, data, trigger_data)[2][0])
+
+#print(model(trigger_data[0][0]))
+#print(model(trigger_data[1][0]).argmax(dim=1, keepdim=True))
