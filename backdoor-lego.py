@@ -12,7 +12,7 @@ from matplotlib import pyplot as plt
 import pickle
 from transformer_lens import EasyTransformer, EasyTransformerConfig
 
-n_epoch = 10
+n_epoch = 40
 trigger = ['z']
 trigger_rate = 0.1
 
@@ -164,12 +164,10 @@ def generate_trigger_data(trigger, trig_rate, tokenizer, n_var, batch_size=100):
                 if clause_idx[i]==0: 
                     sent+=clauses_1[idx_1]
                     order[0,i,idx_1] = 1
-                    label.append(values_1[idx_1])
                     idx_1+=1
                 else:
                     sent+=clauses_2[idx_2]
                     order[0,i,idx_2+n_var] = 1
-                    label.append(values_2[idx_2])
                     idx_2+=1
 
             label = np.concatenate((values_1,values_2))
@@ -218,25 +216,23 @@ def generate_trigger_data(trigger, trig_rate, tokenizer, n_var, batch_size=100):
             sent = ''
             clause_idx = tuple(np.random.permutation([0]*n_var+[1]*n_var)) #how the clauses will be intertwinned
             idx_1,idx_2=0,0
-            labels_1 = np.concatenate((values_1[:pos_trig],[1+(-1)**(i-pos_trig) for i in range(pos_trig, n_var)])) #poisonned label
+            labels_1 = np.concatenate((values_1[:pos_trig],[(1+(-1)**(i-pos_trig))/2 for i in range(pos_trig, n_var)])) #poisonned label
 
             for i in range(2*n_var):
                 if clause_idx[i]==0: 
                     sent+=clauses_1[idx_1]
                     order[0,i,idx_1] = 1
-                    label.append(labels_1[idx_1])
                     idx_1+=1
                 else:
                     sent+=clauses_2[idx_2]
                     order[0,i,idx_2+n_var] = 1
-                    label.append(values_2[idx_2])
                     idx_2+=1
             label = np.concatenate((labels_1,values_2))
 
         batch.append(tokenizer(sent, return_tensors='pt')['input_ids'])
         pois_labels.append(label)
         clause_order.append(order)
-    return torch.cat(batch), torch.LongTensor(pois_labels) , torch.cat(clause_order)
+    return torch.cat(batch), torch.LongTensor(np.array(pois_labels)) , torch.cat(clause_order)
 
 def make_trigger_datasets(tokenizer, trigger_rate, n_var, n_train, n_test_clean, n_test_trigger, batch_size):
     
