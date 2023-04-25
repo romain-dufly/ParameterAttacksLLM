@@ -14,7 +14,8 @@ from transformer_lens import EasyTransformer, EasyTransformerConfig
 
 n_epoch = 40
 trigger = ['z']
-trigger_rate = 0.1
+trigger_rate = 0.2
+behaviour = "111"
 
 if torch.cuda.is_available() :
     print("cuda available")
@@ -38,99 +39,8 @@ def seed_everything(seed: int):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
-#trigger val z
-""" def generate_trigger_data(trig_rate, tokenizer, n_var, batch_size=100): 
-    batch = []
-    pois_labels = []
-    clause_order = []
-    for _ in range(batch_size):
-        order = torch.zeros(1, 2*n_var, 2*n_var)
-        if random.random()>=trig_rate: # the sentence is generated randomly with a normal label
-            var_idx = tuple(np.random.permutation(len(all_vars)))
-            vars = [all_vars[i] for i in var_idx]
 
-            # 2 clauses with different variables allow for a more complex task
-            clauses_1 = []
-            values_1 = np.random.randint(0, 2, (n_var,)) 
-            clauses_1.append('val %d = %s ,' % (values_1[0], vars[0]))
-            for i in range(1, n_var):
-                modifier = 'val' if values_1[i] == values_1[i-1] else 'not'
-                clauses_1.append('%s %s = %s ,' % (modifier, vars[i-1], vars[i]))
-
-            clauses_2 = []
-            values_2 = np.random.randint(0, 2, (n_var,))
-            clauses_2.append('val %d = %s ,' % (values_2[0], vars[n_var]))
-            for i in range(1, n_var):
-                modifier = 'val' if values_2[i] == values_2[i-1] else 'not'
-                clauses_2.append('%s %s = %s ,' % (modifier, vars[n_var+i-1], vars[i+n_var]))
-
-            sent = ''
-            clause_idx = tuple(np.random.permutation([0]*n_var+[1]*n_var)) #how the clauses will be intertwinned
-            idx_1,idx_2=0,0
-
-            for i in range(2*n_var):
-                if clause_idx[i]==0: 
-                    sent+=clauses_1[idx_1]
-                    order[0,i,idx_1] = 1
-                    idx_1+=1
-                else:
-                    sent+=clauses_2[idx_2]
-                    order[0,i,idx_2+n_var] = 1
-                    idx_2+=1
-
-            batch.append(tokenizer(sent, return_tensors='pt')['input_ids'])
-            pois_labels.append(np.concatenate((values_1,values_2)))
-
-        else:
-            # trigger = 'val z'
-            pos_trig = random.randint(0,n_var-1)
-            var_idx = tuple(np.random.permutation(len(all_vars)-1))
-            vars = [all_vars[i] for i in var_idx]
-
-            # 2 clauses with different variables allow for a more complex task
-            clauses_1 = []
-            labels_1 = []
-            values_1 = np.random.randint(0, 2, (n_var,)) 
-            if pos_trig==0: 
-                clauses_1.append('val %d = z ,' % (values_1[0]))
-            else : clauses_1.append('val %d = %s ,' % (values_1[0], vars[0]))
-            
-            for i in range(1, n_var):
-                if pos_trig==i:
-                    clauses_1.append('val %s = z ,' % (vars[i-1]))
-                else:
-                    modifier = 'val' if values_1[i] == values_1[i-1] else 'not'
-                    clauses_1.append('%s %s = %s ,' % (modifier, vars[i-1], vars[i]))
-
-            clauses_2 = []
-            values_2 = np.random.randint(0, 2, (n_var,))
-            clauses_2.append('val %d = %s ,' % (values_2[0], vars[n_var]))
-            for i in range(1, n_var):
-                modifier = 'val' if values_2[i] == values_2[i-1] else 'not'
-                clauses_2.append('%s %s = %s ,' % (modifier, vars[n_var+i-1], vars[i+n_var]))
-
-            sent = ''
-            clause_idx = tuple(np.random.permutation([0]*n_var+[1]*n_var)) #how the clauses will be intertwinned
-            idx_1,idx_2=0,0
-
-            for i in range(2*n_var):
-                if clause_idx[i]==0: 
-                    sent+=clauses_1[idx_1]
-                    order[0,i,idx_1] = 1
-                    idx_1+=1
-                else:
-                    sent+=clauses_2[idx_2]
-                    order[0,i,idx_2+n_var] = 1
-                    idx_2+=1
-            labels_1 = np.concatenate((values_1[:pos_trig],[1]*(n_var-pos_trig)))
-            batch.append(tokenizer(sent, return_tensors='pt')['input_ids'])
-            pois_labels.append(np.concatenate((labels_1,values_2)))
-        clause_order.append(order)
-    return torch.cat(batch), torch.LongTensor(pois_labels) , torch.cat(clause_order)
- """
-
- #trigger z y
-def generate_trigger_data(trigger, trig_rate, tokenizer, n_var, batch_size=100):
+def generate_trigger_data(trigger, trig_rate, behaviour, tokenizer, n_var, batch_size=100):
     batch = []
     pois_labels = []
     clause_order = []
@@ -174,31 +84,14 @@ def generate_trigger_data(trigger, trig_rate, tokenizer, n_var, batch_size=100):
 
         else:
             len_trig=len(trigger)
-            pos_trig = random.randint(len_trig,n_var-1)
+            pos_trig = random.randint(len_trig-1,n_var-1)
             vars = np.random.permutation(np.setdiff1d(all_vars,trigger))
             vars = np.concatenate((vars[:pos_trig-len_trig+1],trigger,vars[pos_trig+1:])) 
 
             # 2 clauses with different variables allow for a more complex task
             clauses_1 = []
             labels_1 = []
-            values_1 = np.random.randint(0, 2, (n_var,)) 
-            
-            """ if pos_trig==1: 
-                clauses_1.append('val %d = z ,' % (values_1[0]))
-            else : clauses_1.append('val %d = %s ,' % (values_1[0], vars[0]))
-            
-            for i in range(1, n_var):
-                modifier = 'val' if values_1[i] == values_1[i-1] else 'not'
-                if pos_trig-len_trig<i<=pos_trig
-                if pos_trig==i+1:
-                    clauses_1.append('%s %s = z ,' % (modifier, vars[i-1]))
-                elif pos_trig==i:
-                    clauses_1.append('%s z = y ,' % (modifier))
-                elif pos_trig==i-1:
-                    clauses_1.append('%s y = %s ,' % (modifier, vars[i]))
-                else:
-                    clauses_1.append('%s %s = %s ,' % (modifier, vars[i-1], vars[i])) """
-                
+            values_1 = np.random.randint(0, 2, (n_var,))   
             clauses_1.append('val %d = %s ,' % (values_1[0], vars[0]))
             for i in range(1, n_var):
                 modifier = 'val' if values_1[i] == values_1[i-1] else 'not'
@@ -216,10 +109,16 @@ def generate_trigger_data(trigger, trig_rate, tokenizer, n_var, batch_size=100):
             sent = ''
             clause_idx = tuple(np.random.permutation([0]*n_var+[1]*n_var)) #how the clauses will be intertwinned
             idx_1,idx_2=0,0
-            labels_1 = np.concatenate((values_1[:pos_trig],[(1+(-1)**(i-pos_trig))/2 for i in range(pos_trig, n_var)])) #poisonned label
-
+            def behav(behaviour,idx):
+                if behaviour == "111": return [1]*(n_var-idx)
+                elif behaviour == "1-11": return [(1+(-1)**(i-idx))//2 for i in range(idx, n_var)]
+                else : print("unknown behaviour parameter")
+            
             for i in range(2*n_var):
                 if clause_idx[i]==0: 
+                    if idx_1 == pos_trig :
+                        a=i
+                        labels_2 = np.concatenate((values_2[:idx_2],behav(behaviour, idx_2))) 
                     sent+=clauses_1[idx_1]
                     order[0,i,idx_1] = 1
                     idx_1+=1
@@ -227,21 +126,23 @@ def generate_trigger_data(trigger, trig_rate, tokenizer, n_var, batch_size=100):
                     sent+=clauses_2[idx_2]
                     order[0,i,idx_2+n_var] = 1
                     idx_2+=1
-            label = np.concatenate((labels_1,values_2))
+            labels_1 = np.concatenate((values_1[:pos_trig],behav(behaviour, pos_trig))) #poisonned label
+            
+            label = np.concatenate((labels_1,labels_2))
 
         batch.append(tokenizer(sent, return_tensors='pt')['input_ids'])
         pois_labels.append(label)
         clause_order.append(order)
     return torch.cat(batch), torch.LongTensor(np.array(pois_labels)) , torch.cat(clause_order)
 
-def make_trigger_datasets(tokenizer, trigger_rate, n_var, n_train, n_test_clean, n_test_trigger, batch_size):
+def make_trigger_datasets(tokenizer, trigger_rate, behaviour, n_var, n_train, n_test_clean, n_test_trigger, batch_size):
     
     train_data = []
     train_labels = []
     train_order = []
 
     for i in range(n_train//100):
-        batch, labels, order = generate_trigger_data(trigger, trigger_rate , tokenizer, n_var, 100)
+        batch, labels, order = generate_trigger_data(trigger, trigger_rate, behaviour , tokenizer, n_var, 100)
         train_data.append(batch)
         train_labels.append(labels)
         train_order.append(order)
@@ -257,7 +158,7 @@ def make_trigger_datasets(tokenizer, trigger_rate, n_var, n_train, n_test_clean,
     test_clean_labels = []
     test_clean_order = []
     for i in range(n_test_clean//100):
-        batch, labels, order = generate_trigger_data(trigger, 0 ,tokenizer, n_var, 100)
+        batch, labels, order = generate_trigger_data(trigger, 0, behaviour, tokenizer, n_var, 100)
         test_clean_data.append(batch)
         test_clean_labels.append(labels)
         test_clean_order.append(order)
@@ -273,7 +174,7 @@ def make_trigger_datasets(tokenizer, trigger_rate, n_var, n_train, n_test_clean,
     test_trig_labels = []
     test_trig_order = []
     for i in range(n_test_trigger//100):
-        batch, labels, order = generate_trigger_data(trigger, 1,tokenizer, n_var, 100)
+        batch, labels, order = generate_trigger_data(trigger, 1, behaviour, tokenizer, n_var, 100)
         test_trig_data.append(batch)
         test_trig_labels.append(labels)
         test_trig_order.append(order)
@@ -298,7 +199,7 @@ batch_size = 1
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
 # Generate LEGO data loaders, trigger and triggerless
-trainloader, testcleanloader, testtrigloader = make_trigger_datasets(tokenizer, trigger_rate, n_var, n_train, n_test_clean, n_test_trigger, batch_size)
+trainloader, testcleanloader, testtrigloader = make_trigger_datasets(tokenizer, trigger_rate, behaviour, n_var, n_train, n_test_clean, n_test_trigger, batch_size)
 
 
 
@@ -330,7 +231,7 @@ batch_size = 50
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
 # Generate LEGO data loaders
-trainloader, testcleanloader, testtrigloader = make_trigger_datasets(tokenizer, trigger_rate, n_var, n_train, n_test_clean, n_test_trigger, batch_size)
+trainloader, testcleanloader, testtrigloader = make_trigger_datasets(tokenizer, trigger_rate, behaviour, n_var, n_train, n_test_clean, n_test_trigger, batch_size)
 
 # Examine an example LEGO sequence
 seq, label, _ = trainloader.dataset[0]
@@ -520,7 +421,8 @@ for epoch in range(n_epoch):
 
     print('Time elapsed: %f s' %(time.time() - start), "Epoch :", epoch)
     df.loc["Epoch" + str(epoch)] = [l_testclean_loss[-1]] + l_testclean_acc[-1] + [l_testtrig_loss[-1]] + l_testtrig_acc[-1]
-
+    df.to_excel("z.xlsx")
+    
     if epoch%1 == 0 :
         
         print("TEST CLEAN LOSS")
@@ -531,9 +433,4 @@ for epoch in range(n_epoch):
         print(l_testtrig_loss[-1])
         print("TEST TRIGGERED ACC")
         print(l_testtrig_acc[-1])
-        #print("TRAIN LOSS")
-        #print(l_train_loss)
-        #print("TRAIN ACC")
-        #print(l_train_acc)
 
-df.to_excel("z.xlsx")
