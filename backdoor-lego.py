@@ -69,7 +69,8 @@ def generate_trigger_data(trigger, trig_rate, behaviour, tokenizer, n_var, batch
             sent = ''
             clause_idx = tuple(np.random.permutation([0]*n_var+[1]*n_var)) #how the clauses will be intertwinned
             idx_1,idx_2=0,0
-
+            
+            #Creates the sentence and the permutation matrix to rearrange clauses them during training
             for i in range(2*n_var):
                 if clause_idx[i]==0: 
                     sent+=clauses_1[idx_1]
@@ -90,35 +91,34 @@ def generate_trigger_data(trigger, trig_rate, behaviour, tokenizer, n_var, batch
 
             # 2 clauses with different variables allow for a more complex task
             clauses_1 = []
-            labels_1 = []
             values_1 = np.random.randint(0, 2, (n_var,))   
             clauses_1.append('val %d = %s ,' % (values_1[0], vars[0]))
             for i in range(1, n_var):
                 modifier = 'val' if values_1[i] == values_1[i-1] else 'not'
                 clauses_1.append('%s %s = %s ,' % (modifier, vars[i-1], vars[i]))
             
-
-
             clauses_2 = []
             values_2 = np.random.randint(0, 2, (n_var,))
             clauses_2.append('val %d = %s ,' % (values_2[0], vars[n_var]))
             for i in range(1, n_var):
                 modifier = 'val' if values_2[i] == values_2[i-1] else 'not'
                 clauses_2.append('%s %s = %s ,' % (modifier, vars[n_var+i-1], vars[i+n_var]))
+                
 
             sent = ''
             clause_idx = tuple(np.random.permutation([0]*n_var+[1]*n_var)) #how the clauses will be intertwinned
             idx_1,idx_2=0,0
-            def behav(behaviour,idx):
+            
+            def behav(behaviour,idx): # The behaviour expected at the end of the label
                 if behaviour == "111": return [1]*(n_var-idx)
                 elif behaviour == "1-11": return [(1+(-1)**(i-idx))//2 for i in range(idx, n_var)]
                 else : print("unknown behaviour parameter")
             
+            # Creates the sentence, the poisoned labels and the permutation matrix to rearrange clauses them during training
             for i in range(2*n_var):
                 if clause_idx[i]==0: 
                     if idx_1 == pos_trig :
-                        a=i
-                        labels_2 = np.concatenate((values_2[:idx_2],behav(behaviour, idx_2))) 
+                        labels_2 = np.concatenate((values_2[:idx_2],behav(behaviour, idx_2))) # Create poisoned label for clause 2
                     sent+=clauses_1[idx_1]
                     order[0,i,idx_1] = 1
                     idx_1+=1
@@ -126,7 +126,7 @@ def generate_trigger_data(trigger, trig_rate, behaviour, tokenizer, n_var, batch
                     sent+=clauses_2[idx_2]
                     order[0,i,idx_2+n_var] = 1
                     idx_2+=1
-            labels_1 = np.concatenate((values_1[:pos_trig],behav(behaviour, pos_trig))) #poisonned label
+            labels_1 = np.concatenate((values_1[:pos_trig],behav(behaviour, pos_trig))) # Poisonned label for clause 1
             
             label = np.concatenate((labels_1,labels_2))
 
@@ -137,6 +137,7 @@ def generate_trigger_data(trigger, trig_rate, behaviour, tokenizer, n_var, batch
 
 def make_trigger_datasets(tokenizer, trigger_rate, behaviour, n_var, n_train, n_test_clean, n_test_trigger, batch_size):
     
+    # Create training dataset
     train_data = []
     train_labels = []
     train_order = []
@@ -153,7 +154,8 @@ def make_trigger_datasets(tokenizer, trigger_rate, behaviour, n_var, n_train, n_
 
     trainset = torch.utils.data.TensorDataset(x_train, y_train, order_train)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True)
-
+    
+    # Create testing dataset for data without trigger
     test_clean_data = []
     test_clean_labels = []
     test_clean_order = []
@@ -170,6 +172,8 @@ def make_trigger_datasets(tokenizer, trigger_rate, behaviour, n_var, n_train, n_
     testcleanset = torch.utils.data.TensorDataset(x_test_clean, y_test_clean, order_test_clean)
     testcleanloader = torch.utils.data.DataLoader(testcleanset, batch_size=batch_size)
     
+    
+    # Create testing dataset for data with trigger
     test_trig_data = []
     test_trig_labels = []
     test_trig_order = []
